@@ -24,12 +24,23 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.sun import is_up
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ATTR_CLEAR_SKY_INDEX,
+    ATTR_CONDITION_SOURCE,
+    ATTR_PRESSURE_ENTITY,
     ATTR_PRESSURE_TREND,
+    ATTR_TREND_HOURS,
+    CONF_PRESSURE_SENSOR,
+    CONF_TREND_HOURS,
+    DEFAULT_TREND_HOURS,
     FORECAST_ENTRY_COUNT,
+    SOURCE_FORECAST,
+    SOURCE_RAIN,
+    SOURCE_SOLAR,
     ATTR_SAMPLE_COUNT,
     ATTR_SEA_LEVEL_PRESSURE,
     ATTR_ZAMBRETTI_CODE,
@@ -39,6 +50,7 @@ from .const import (
     MANUFACTURER,
 )
 from .coordinator import ForecastData, LocalForecastConfigEntry, LocalForecastCoordinator
+from .solar import condition_for_coverage
 
 #: Regenrate (mm/h), ab der von Starkregen statt Regen ausgegangen wird.
 POURING_THRESHOLD_MM_H = 4.0
@@ -81,6 +93,12 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
         """Initialisiere die Entity."""
         super().__init__(coordinator)
         self._attr_unique_id = config_entry.entry_id
+        # Beides nur für die Lovelace-Karte: sie zeichnet den Druckverlauf und
+        # muss dafür wissen, welche Entität über welchen Zeitraum abzufragen ist.
+        self._pressure_entity: str = config_entry.data[CONF_PRESSURE_SENSOR]
+        self._trend_hours: int = config_entry.options.get(
+            CONF_TREND_HOURS, DEFAULT_TREND_HOURS
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
             name=config_entry.title or DEFAULT_NAME,
@@ -112,6 +130,11 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
         return self._data.pressure if self._data else None
 
     @property
+    def cloud_coverage(self) -> float | None:
+        """Anteil der fehlenden Sonnenstrahlung in Prozent."""
+        return self._data.cloud_coverage if self._data else None
+
+    @property
     def wind_bearing(self) -> float | None:
         """Aktuelle Windrichtung in Grad."""
         return self._data.wind_bearing if self._data else None
@@ -129,14 +152,19 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
     def condition(self) -> str | None:
         """Aktueller Wetterzustand.
 
-        Reihenfolge der Wahrheitsquellen:
+        Rangfolge der Wahrheitsquellen, von hart nach weich:
 
-        1. Fällt gerade messbar Regen, gewinnt die Messung - eine Prognose
-           kann nicht behaupten, es sei sonnig, während der Regenmesser läuft.
-        2. Sonst der Zambretti-Ausblick. Das ist bewusst eine Näherung: das
-           Verfahren sagt die kommenden Stunden voraus, nicht den Moment.
-           Die Alternative wäre gar kein Zustand gewesen.
-        3. Bei "sunny" nach Sonnenuntergang wird auf "clear-night" gewechselt.
+        1. **Regenmessung.** Fällt messbar Regen, gewinnt sie. Keine Rechnung
+           darf behaupten, es sei sonnig, während der Regenmesser läuft.
+        2. **Strahlungsmessung** (seit 0.3.0). Steht die Sonne hoch genug,
+           verrät der Vergleich von gemessener und erwarteter Strahlung, wie
+           stark die Sonne verdeckt ist. Auch das ist eine Messung, kein Modell.
+        3. **Zambretti-Ausblick.** Nur noch der Rückfall für die Nacht und für
+           Einrichtungen ohne Strahlungssensor. Vor 0.3.0 war das der
+           Normalfall - der angezeigte "aktuelle" Zustand war damals in
+           Wahrheit eine Vorhersage.
+
+        Welche Quelle gegriffen hat, steht im Attribut ``condition_source``.
         """
         data = self._data
         if data is None:
@@ -149,6 +177,9 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
                 return ATTR_CONDITION_POURING
             return ATTR_CONDITION_RAINY
 
+        if data.cloud_coverage is not None:
+            return condition_for_coverage(data.cloud_coverage, self._is_daytime())
+
         if data.result is None:
             return None
 
@@ -157,12 +188,30 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
             return ATTR_CONDITION_CLEAR_NIGHT
         return condition
 
-    def _is_daytime(self) -> bool:
-        """Steht die Sonne über dem Horizont?"""
-        sun = self.hass.states.get("sun.sun")
-        if sun is None:
+    @property
+    def _condition_source(self) -> str | None:
+        """Benenne, welche Quelle den Zustand gerade bestimmt."""
+        data = self._data
+        if data is None:
+            return None
+        if data.rain_rate is not None and data.rain_rate > 0:
+            return SOURCE_RAIN
+        if data.cloud_coverage is not None:
+            return SOURCE_SOLAR
+        return SOURCE_FORECAST
+
+    def _is_daytime(self, moment=None) -> bool:
+        """Steht die Sonne zu diesem Zeitpunkt über dem Horizont?
+
+        Bewusst über den Sonnenstands-Helfer und nicht über den Zustand von
+        ``sun.sun``: dieser kennt nur das Jetzt. Für die Prognoseeinträge
+        braucht es die Antwort für jede einzelne kommende Stunde, sonst
+        strahlt in der Nachtvorschau sechsmal eine Sonne.
+        """
+        try:
+            return is_up(self.hass, moment)
+        except Exception:  # noqa: BLE001 - ohne Standortdaten lieber Tag annehmen
             return True
-        return sun.state != "below_horizon"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -171,7 +220,16 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
         if data is None:
             return {}
 
-        attributes: dict[str, Any] = {ATTR_SAMPLE_COUNT: data.sample_count}
+        attributes: dict[str, Any] = {
+            ATTR_SAMPLE_COUNT: data.sample_count,
+            ATTR_TREND_HOURS: self._trend_hours,
+            ATTR_PRESSURE_ENTITY: self._pressure_entity,
+        }
+        source = self._condition_source
+        if source is not None:
+            attributes[ATTR_CONDITION_SOURCE] = source
+        if data.clear_sky_index is not None:
+            attributes[ATTR_CLEAR_SKY_INDEX] = round(data.clear_sky_index, 2)
         if data.pressure is not None:
             attributes[ATTR_SEA_LEVEL_PRESSURE] = round(data.pressure, 1)
         if data.result is not None:
@@ -203,17 +261,23 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
             return None
 
         now = dt_util.utcnow()
-        return [
-            Forecast(
-                datetime=(now + timedelta(hours=hour)).isoformat(),
-                condition=data.result.condition,
-                native_temperature=data.temperature,
-                native_pressure=data.pressure,
-                wind_bearing=data.wind_bearing,
-                native_wind_speed=data.wind_speed,
+        entries: list[Forecast] = []
+        for hour in range(1, FORECAST_ENTRY_COUNT + 1):
+            moment = now + timedelta(hours=hour)
+            condition = data.result.condition
+            if condition == ATTR_CONDITION_SUNNY and not self._is_daytime(moment):
+                condition = ATTR_CONDITION_CLEAR_NIGHT
+            entries.append(
+                Forecast(
+                    datetime=moment.isoformat(),
+                    condition=condition,
+                    native_temperature=data.temperature,
+                    native_pressure=data.pressure,
+                    wind_bearing=data.wind_bearing,
+                    native_wind_speed=data.wind_speed,
+                )
             )
-            for hour in range(1, FORECAST_ENTRY_COUNT + 1)
-        ]
+        return entries
 
     @callback
     def _handle_coordinator_update(self) -> None:

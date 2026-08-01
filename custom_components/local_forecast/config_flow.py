@@ -21,6 +21,9 @@ from .const import (
     CONF_PRESSURE_IS_ABSOLUTE,
     CONF_PRESSURE_SENSOR,
     CONF_RAIN_RATE_SENSOR,
+    CONF_SOLAR_CALIBRATION,
+    CONF_SOLAR_SENSOR,
+    DEFAULT_SOLAR_CALIBRATION,
     CONF_TEMPERATURE_SENSOR,
     CONF_TREND_HOURS,
     CONF_UPDATE_INTERVAL,
@@ -30,8 +33,10 @@ from .const import (
     DEFAULT_TREND_HOURS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    MAX_SOLAR_CALIBRATION,
     MAX_TREND_HOURS,
     MAX_UPDATE_INTERVAL,
+    MIN_SOLAR_CALIBRATION,
     MIN_TREND_HOURS,
     MIN_UPDATE_INTERVAL,
 )
@@ -65,6 +70,7 @@ def _user_schema() -> vol.Schema:
             vol.Optional(CONF_WIND_BEARING_SENSOR): _SENSOR_SELECTOR,
             vol.Optional(CONF_WIND_SPEED_SENSOR): _SENSOR_SELECTOR,
             vol.Optional(CONF_RAIN_RATE_SENSOR): _SENSOR_SELECTOR,
+            vol.Optional(CONF_SOLAR_SENSOR): _SENSOR_SELECTOR,
         }
     )
 
@@ -97,6 +103,23 @@ def _options_schema(
                     step=1,
                     mode=selector.NumberSelectorMode.BOX,
                     unit_of_measurement="min",
+                )
+            ),
+            vol.Optional(
+                CONF_SOLAR_SENSOR,
+                description={"suggested_value": current.get(CONF_SOLAR_SENSOR)},
+            ): _SENSOR_SELECTOR,
+            vol.Optional(
+                CONF_SOLAR_CALIBRATION,
+                default=current.get(
+                    CONF_SOLAR_CALIBRATION, DEFAULT_SOLAR_CALIBRATION
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=MIN_SOLAR_CALIBRATION,
+                    max=MAX_SOLAR_CALIBRATION,
+                    step=0.01,
+                    mode=selector.NumberSelectorMode.BOX,
                 )
             ),
             vol.Optional(

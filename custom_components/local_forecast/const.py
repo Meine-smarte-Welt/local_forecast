@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "local_forecast"
+VERSION: Final = "0.3.0"
+
+#: Lovelace-Karte
+CARD_FILENAME: Final = "local-forecast-card.js"
+CARD_URL: Final = f"/{DOMAIN}/{CARD_FILENAME}"
 MANUFACTURER: Final = "Lokale Wetterprognose"
 DEFAULT_NAME: Final = "Lokale Wetterprognose"
 
@@ -16,11 +21,17 @@ CONF_HUMIDITY_SENSOR: Final = "humidity_sensor"
 CONF_WIND_BEARING_SENSOR: Final = "wind_bearing_sensor"
 CONF_WIND_SPEED_SENSOR: Final = "wind_speed_sensor"
 CONF_RAIN_RATE_SENSOR: Final = "rain_rate_sensor"
+CONF_SOLAR_SENSOR: Final = "solar_sensor"
 
 # Konfigurationsschlüssel (Optionen, nachträglich änderbar)
 CONF_ELEVATION: Final = "elevation"
 CONF_TREND_HOURS: Final = "trend_hours"
 CONF_UPDATE_INTERVAL: Final = "update_interval"
+CONF_SOLAR_CALIBRATION: Final = "solar_calibration"
+
+DEFAULT_SOLAR_CALIBRATION: Final = 1.0
+MIN_SOLAR_CALIBRATION: Final = 0.5
+MAX_SOLAR_CALIBRATION: Final = 1.5
 
 DEFAULT_TREND_HOURS: Final = 3
 MIN_TREND_HOURS: Final = 1
@@ -52,3 +63,12 @@ ATTR_ZAMBRETTI_TEXT: Final = "zambretti_text"
 ATTR_PRESSURE_TREND: Final = "pressure_trend"
 ATTR_SEA_LEVEL_PRESSURE: Final = "sea_level_pressure"
 ATTR_SAMPLE_COUNT: Final = "sample_count"
+ATTR_TREND_HOURS: Final = "trend_hours"
+ATTR_PRESSURE_ENTITY: Final = "pressure_entity_id"
+ATTR_CLEAR_SKY_INDEX: Final = "clear_sky_index"
+ATTR_CONDITION_SOURCE: Final = "condition_source"
+
+#: Woher der angezeigte Zustand stammt - macht die Rangfolge nachvollziehbar.
+SOURCE_RAIN: Final = "regenmessung"
+SOURCE_SOLAR: Final = "strahlungsmessung"
+SOURCE_FORECAST: Final = "prognose"

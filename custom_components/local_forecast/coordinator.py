@@ -20,6 +20,9 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ELEVATION,
+    CONF_SOLAR_CALIBRATION,
+    CONF_SOLAR_SENSOR,
+    DEFAULT_SOLAR_CALIBRATION,
     CONF_HUMIDITY_SENSOR,
     CONF_PRESSURE_IS_ABSOLUTE,
     CONF_PRESSURE_SENSOR,
@@ -36,6 +39,7 @@ from .const import (
     PRESSURE_SANITY_MAX,
     PRESSURE_SANITY_MIN,
 )
+from .solar import clear_sky_index, cloud_coverage, lux_to_irradiance
 from .zambretti import ZambrettiResult, forecast, pressure_trend, to_sea_level
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +61,11 @@ class ForecastData:
     wind_speed: float | None
     rain_rate: float | None
     sample_count: int
+    clear_sky_index: float | None
+    """Anteil der ankommenden Klarhimmelstrahlung, oder None bei tiefer Sonne."""
+
+    cloud_coverage: float | None
+    """Fehlende Strahlung in Prozent, oder None bei tiefer Sonne."""
 
 
 class LocalForecastCoordinator(DataUpdateCoordinator[ForecastData]):
@@ -87,6 +96,17 @@ class LocalForecastCoordinator(DataUpdateCoordinator[ForecastData]):
         self._wind_bearing_entity: str | None = data.get(CONF_WIND_BEARING_SENSOR)
         self._wind_speed_entity: str | None = data.get(CONF_WIND_SPEED_SENSOR)
         self._rain_rate_entity: str | None = data.get(CONF_RAIN_RATE_SENSOR)
+        # Der Strahlungssensor kam erst in 0.3.0 dazu. Bestehende Einrichtungen
+        # tragen ihn deshalb in den Optionen nach, neue direkt im Einrichtungs-
+        # dialog - beide Orte werden gelesen, Optionen haben Vorrang.
+        self._solar_entity: str | None = options.get(
+            CONF_SOLAR_SENSOR
+        ) or data.get(CONF_SOLAR_SENSOR)
+        self._solar_calibration: float = float(
+            options.get(CONF_SOLAR_CALIBRATION, DEFAULT_SOLAR_CALIBRATION)
+        )
+        self._latitude: float = hass.config.latitude or 0.0
+        self._longitude: float = hass.config.longitude or 0.0
 
         self._trend_hours: int = options.get(CONF_TREND_HOURS, DEFAULT_TREND_HOURS)
         self._elevation: float = float(
@@ -126,6 +146,32 @@ class LocalForecastCoordinator(DataUpdateCoordinator[ForecastData]):
         return to_sea_level(
             raw_pressure, self._elevation, temperature if temperature is not None else 15.0
         )
+
+    def _read_sky(self, now: datetime) -> tuple[float | None, float | None]:
+        """Ermittle Klarheitsindex und Trübungsgrad aus der Strahlungsmessung.
+
+        Der Sensor darf in W/m² oder in Lux liefern; die Einheit wird aus der
+        Entität gelesen, statt sie zu erraten.
+        """
+        if not self._solar_entity:
+            return None, None
+
+        raw = self._read_float(self._solar_entity)
+        if raw is None:
+            return None, None
+
+        state = self.hass.states.get(self._solar_entity)
+        unit = (
+            (state.attributes.get("unit_of_measurement") or "") if state else ""
+        ).strip().lower()
+        irradiance = lux_to_irradiance(raw) if unit in ("lx", "lux") else raw
+
+        index = clear_sky_index(
+            irradiance, now, self._latitude, self._longitude, self._solar_calibration
+        )
+        if index is None:
+            return None, None
+        return index, cloud_coverage(index)
 
     # ------------------------------------------------------------------
     # Historie
@@ -202,6 +248,7 @@ class LocalForecastCoordinator(DataUpdateCoordinator[ForecastData]):
         wind_bearing = self._read_float(self._wind_bearing_entity)
         wind_speed = self._read_float(self._wind_speed_entity)
         rain_rate = self._read_float(self._rain_rate_entity)
+        index, coverage = self._read_sky(now=dt_util.utcnow())
 
         sea_level = self._to_sea_level(raw_pressure, temperature)
 
@@ -242,4 +289,6 @@ class LocalForecastCoordinator(DataUpdateCoordinator[ForecastData]):
             wind_speed=wind_speed,
             rain_rate=rain_rate,
             sample_count=len(self._history),
+            clear_sky_index=index,
+            cloud_coverage=coverage,
         )

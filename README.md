@@ -15,8 +15,10 @@ Automatisierungen, die auf `weather.*` reagieren.
 - [Installation](#installation)
 - [Einrichtung](#einrichtung)
 - [Wie es funktioniert](#wie-es-funktioniert)
+- [Bewölkung aus dem Lichtsensor](#bewölkung-aus-dem-lichtsensor)
 - [Warum stündlich, und warum sechs Einträge](#warum-stündlich-und-warum-sechs-einträge)
 - [Zuordnungstabelle](#zuordnungstabelle)
+- [Dashboard-Karte](#dashboard-karte)
 - [Attribute](#attribute)
 - [Optionen](#optionen)
 - [Bekannte Einschränkungen](#bekannte-einschränkungen)
@@ -33,6 +35,7 @@ Automatisierungen, die auf `weather.*` reagieren.
 | Luftfeuchte | nein | nur zur Anzeige |
 | Windgeschwindigkeit | nein | nur zur Anzeige |
 | Regenrate | nein | lässt bei echtem Regen die Messung gewinnen |
+| Sonneneinstrahlung | nein | **stark empfohlen** — macht den aktuellen Zustand zur Messung |
 
 ### Hinweis für Ecowitt-Besitzer
 
@@ -91,16 +94,70 @@ dafür, dass versehentlich der absolute Druck gewählt wurde.
 
 ### Woher der angezeigte Zustand kommt
 
-Die Entity muss einen aktuellen Zustand haben, das Verfahren liefert aber einen
-Ausblick auf die nächsten Stunden. Die Reihenfolge ist deshalb:
+Rangfolge von hart nach weich. Welche Quelle gegriffen hat, steht im Attribut
+`condition_source`:
 
-1. **Regnet es messbar** (Regenrate > 0), gewinnt die Messung. Eine Prognose
-   darf nicht „sonnig" behaupten, während der Regenmesser läuft. Ab 4 mm/h wird
-   auf `pouring` gewechselt, unter 1 °C auf `snowy`.
-2. Sonst der Zambretti-Ausblick.
-3. Bei `sunny` nach Sonnenuntergang wird auf `clear-night` gewechselt. Home
-   Assistant macht das **nicht** von selbst — im Core existiert die Konstante,
-   aber keine automatische Umsetzung.
+1. **Regenmessung.** Regnet es messbar, gewinnt sie. Keine Rechnung darf
+   „sonnig" behaupten, während der Regenmesser läuft. Ab 4 mm/h `pouring`,
+   unter 1 °C `snowy`.
+2. **Strahlungsmessung** (seit 0.3.0, siehe unten). Auch das ist eine Messung.
+3. **Zambretti-Ausblick.** Nur noch Rückfall für die Nacht und für
+   Einrichtungen ohne Strahlungssensor.
+
+Bei `sunny` nach Sonnenuntergang wird auf `clear-night` gewechselt. Home
+Assistant macht das **nicht** von selbst — im Core existiert die Konstante,
+aber keine automatische Umsetzung.
+
+## Bewölkung aus dem Lichtsensor
+
+Bis Version 0.2.0 hatte diese Integration eine Schwäche, die niemandem auffiel:
+Der als „jetzt" angezeigte Zustand war in Wahrheit eine **Vorhersage** für die
+kommenden Stunden. Seit 0.3.0 wird er bei Tageslicht gemessen.
+
+Der Gedanke: aus der Astronomie ist bekannt, wie viel Strahlung bei
+wolkenlosem Himmel ankommen müsste. Was der Sensor davon tatsächlich misst,
+verrät, wie stark die Sonne verdeckt ist.
+
+1. **Sonnenstand** — vereinfachtes NOAA-Verfahren.
+2. **Klarhimmelstrahlung** — Modell nach Haurwitz (1945).
+3. **Klarheitsindex** — Messung geteilt durch Erwartung. Der Trübungsgrad ist
+   sein Kehrwert und landet im Feld `cloud_coverage`.
+
+### Was der Wert wirklich bedeutet
+
+Ein einzelner Strahlungssensor misst **nicht den Bedeckungsgrad des Himmels**,
+sondern die **Verdunkelung der Sonne**. Das ist etwas anderes. Eine dicke Wolke
+genau vor der Sonne bei sonst blauem Himmel ergibt einen hohen Wert. Der Name
+`cloud_coverage` ist übernommen, weil Home Assistant kein passenderes Feld
+kennt — nicht, weil er genau stimmt.
+
+### Warum nicht Kasten-Czeplak
+
+Die naheliegende Wahl wäre die Beziehung von Kasten und Czeplak (1980) gewesen,
+die Bedeckungsgrad in Achteln mit der Strahlungsabschwächung verknüpft. Sie
+wurde bewusst verworfen: Sie beschreibt **Mittelwerte** über Stunden oder Tage.
+Auf einen Momentanwert angewendet liefert sie unbrauchbare Zahlen — nach ihr
+lässt halbe Bedeckung noch 93 % der Klarhimmelstrahlung durch, weil im Mittel
+die Sonne meist zwischen den Wolken hindurchscheint. Rückwärts gerechnet käme
+man schon bei 99 % der erwarteten Strahlung auf zwei Achtel Bedeckung; jede
+kleine Kalibrierungsabweichung des Sensors würde einen wolkenlosen Tag
+dauerhaft als „wolkig" ausweisen.
+
+### Nachts wird nichts behauptet
+
+Unterhalb von 5° Sonnenhöhe ist die erwartete Strahlung so klein, dass das
+Verhältnis nur noch Rauschen ist. Dann liefert die Rechnung bewusst **kein**
+Ergebnis statt eines erfundenen, und der Zambretti-Ausblick übernimmt wieder.
+„Keine Aussage möglich" ist etwas anderes als „stockdunkel bewölkt".
+
+### Wenn die Werte nicht passen
+
+In den Optionen steht ein **Abgleich des Klarhimmelmodells**. Meldet die Karte
+an einem wolkenlosen Mittag dauerhaft Bewölkung, liest dein Sensor zu niedrig:
+Wert unter 1 setzen. Umgekehrt bei „sonnig" unter bedecktem Himmel: über 1.
+
+Wurde die Integration vor 0.3.0 eingerichtet, lässt sich der Strahlungssensor
+in den Optionen nachtragen — kein Neuanlegen nötig.
 
 ## Warum stündlich, und warum sechs Einträge
 
@@ -163,6 +220,38 @@ Bei Temperaturen unter 1 °C werden `rainy` → `snowy-rainy` und `pouring` →
 `snowy` übersetzt. Das Zambretti-Verfahren selbst kennt keinen Schnee, es sagt
 nur Niederschlag voraus.
 
+## Dashboard-Karte
+
+Die Karte wird beim Start automatisch als Frontend-Ressource bereitgestellt —
+du musst sie **nicht** von Hand unter Einstellungen → Dashboards → Ressourcen
+eintragen. Nach dem Neustart erscheint sie in der Kartenauswahl als
+„Lokale Wetterprognose".
+
+```yaml
+type: custom:local-forecast-card
+entity: weather.lokale_wetterprognose
+```
+
+| Option | Standard | Bedeutung |
+|---|---|---|
+| `entity` | — | Pflicht, muss aus der Domäne `weather` stammen |
+| `show_chart` | `true` | Barografen anzeigen |
+| `hours` | Trendfenster der Integration | Zeitraum des Barografen abweichend festlegen |
+
+**Was die Karte zeigt, das die mitgelieferte nicht kann:** den Druckverlauf,
+aus dem die Prognose entsteht. Die durchgezogene Linie ist der echte Verlauf
+aus dem Recorder, die gestrichelte Gerade ist die Tendenz, mit der das
+Verfahren tatsächlich rechnet. Damit siehst du nicht nur das Ergebnis, sondern
+auch seine Eingabe — und erkennst sofort, ob eine überraschende Prognose auf
+einem echten Drucksturz beruht oder auf einem Ausreißer.
+
+Bewusst **keine** Stundenleiste: die sechs Prognoseeinträge sind identisch
+(siehe oben), eine Leiste mit sechsmal demselben Symbol täuscht Detailtiefe
+vor. Wer sie sehen will, stellt die mitgelieferte Wetterkarte daneben.
+
+Der Barograf braucht den Recorder. Zeichnet dieser den Drucksensor nicht auf,
+zeigt die Karte das als Hinweis an, statt leer zu bleiben.
+
 ## Attribute
 
 | Attribut | Bedeutung |
@@ -172,6 +261,10 @@ nur Niederschlag voraus.
 | `pressure_trend` | verwendete Drucktendenz in hPa/h |
 | `sea_level_pressure` | verwendeter Druck auf Meereshöhe |
 | `sample_count` | Messwerte im Trendfenster |
+| `trend_hours` | eingestelltes Trendfenster in Stunden (für die Karte) |
+| `pressure_entity_id` | verwendeter Drucksensor (für die Karte) |
+| `clear_sky_index` | Anteil der ankommenden Klarhimmelstrahlung (0–1,3) |
+| `condition_source` | `regenmessung`, `strahlungsmessung` oder `prognose` |
 
 Beispiel für eine Automatisierung:
 
@@ -198,6 +291,8 @@ action:
 
 | Option | Standard | Bereich |
 |---|---|---|
+| Sonneneinstrahlung | — | Sensor, nachtragbar |
+| Abgleich des Klarhimmelmodells | 1,0 | 0,5–1,5 |
 | Trendfenster | 3 h | 1–12 h |
 | Aktualisierungstakt | 5 min | 1–60 min |
 | Höhe über NN | aus HA-Konfiguration | −500 bis 5000 m |
@@ -255,10 +350,21 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
 
 **Geprüft:**
 
-- 32 Testfälle, alle grün
+- 61 Testfälle gegen die Rechenlogik, alle grün
   (`python3 -m unittest discover -s tests`). `zambretti.py` importiert bewusst
   nichts aus Home Assistant und ist deshalb vollständig ohne laufende Instanz
   testbar.
+- **Der eigene Sonnenstand wurde über ein volles Jahr gegen `astral`
+  gegengeprüft** — die Bibliothek, die Home Assistant selbst dafür verwendet.
+  Größte Abweichung an Thorstens Standort 0,009°, weltweit (Kapstadt,
+  Reykjavík, Singapur) unter 0,011°. Der Vergleich steckt als Testfall im
+  Repository und wird übersprungen, wenn `astral` nicht installiert ist.
+- 21 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`).
+  Geprüft werden unter anderem das deutsche Zahlenformat, die Benennung der
+  Tendenzrichtung an ihren Schwellwerten, das Lesen der Kurzform von
+  Verlaufsdaten (`s`/`lu`/`lc`), das Überspringen von `unavailable`-Werten,
+  dass alle Kurvenpunkte innerhalb der Zeichenfläche bleiben, und dass ein
+  ruhiger Druckverlauf nicht zur dramatischen Zickzacklinie überhöht wird.
 - Alle verwendeten Home-Assistant-Symbole wurden gegen den echten Quellcode von
   **Home Assistant 2026.7.4** abgeglichen, nicht aus dem Gedächtnis
   geschrieben: `WeatherEntityFeature.FORECAST_TWICE_DAILY`,
@@ -273,7 +379,26 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
 
 - Kein Lauf gegen eine echte Home-Assistant-Installation. Der Einrichtungs- und
   Optionsdialog sowie das Vorfüllen aus dem Recorder sind nur auf Symbolebene
-  abgesichert. Das Rendern der Wetterkarte wurde in 0.1.0 an echter Hardware
-  getestet — dabei kam der oben beschriebene Fehler heraus.
+  abgesichert. Das Rendern der Wetterkarte wurde in 0.1.0/0.1.1 an echter
+  Hardware getestet — dabei kamen zwei Fehler heraus, siehe Versionshistorie.
+- Die Lovelace-Karte wurde gegen DOM-Attrappen getestet, nicht in einem echten
+  Browser. Geprüft ist die erzeugte Auszeichnung, nicht ihr Aussehen.
+
+## Versionshistorie
+
+**0.3.0** — Der aktuelle Zustand wird bei Tageslicht aus der
+Sonneneinstrahlung **gemessen** statt aus der Prognose abgeleitet. Neues Feld
+`cloud_coverage`, neue Attribute `clear_sky_index` und `condition_source`,
+neue Option zum Abgleich des Klarhimmelmodells.
+
+**0.2.0** — Lovelace-Karte mit Barograf. Prognosesymbole werden jetzt je
+Stunde auf Tag/Nacht geprüft (vorher strahlten in der Nachtvorschau sechs
+Sonnen). Neue Attribute `trend_hours` und `pressure_entity_id`.
+
+**0.1.1** — Umstellung von `twice_daily` auf `hourly` mit sechs Einträgen; die
+Karte blieb sonst dauerhaft im Ladezustand. Prognose wird bei jeder
+Aktualisierung an Abonnenten geschoben.
+
+**0.1.0** — Erstveröffentlichung.
 - Keine Messung gegen echte Wetterdaten. Wie treffsicher die Prognose an deinem
   Standort ist, zeigt erst der Vergleich über mehrere Wochen.

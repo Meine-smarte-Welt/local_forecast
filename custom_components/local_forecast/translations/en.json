@@ -12,13 +12,15 @@
           "humidity_sensor": "Humidity",
           "wind_bearing_sensor": "Wind bearing",
           "wind_speed_sensor": "Wind speed",
-          "rain_rate_sensor": "Rain rate"
+          "rain_rate_sensor": "Rain rate",
+          "solar_sensor": "Solar irradiance"
         },
         "data_description": {
           "pressure_sensor": "On an Ecowitt gateway (e.g. GW2000) this entity is usually named \"Relative pressure\".",
           "pressure_is_absolute": "Only enable if you deliberately chose absolute pressure. Reduction to sea level then uses the elevation from the options.",
           "wind_bearing_sensor": "In degrees (0-360). The algorithm works without it, but less accurately.",
-          "rain_rate_sensor": "In mm/h. Used to show the measured state instead of the forecast while it is actually raining."
+          "rain_rate_sensor": "In mm/h. Used to show the measured state instead of the forecast while it is actually raining.",
+          "solar_sensor": "In W/m² or lux. Lets the current condition be measured instead of derived from the forecast, which is considerably more accurate."
         }
       }
     },
@@ -37,12 +39,16 @@
         "data": {
           "trend_hours": "Trend window",
           "update_interval": "Update interval",
-          "elevation": "Elevation above sea level"
+          "elevation": "Elevation above sea level",
+          "solar_sensor": "Solar irradiance",
+          "solar_calibration": "Clear-sky model calibration"
         },
         "data_description": {
           "trend_hours": "Period used to compute the pressure trend. The classic algorithm is designed around 3 hours.",
           "update_interval": "How often the forecast is recalculated. More often than every few minutes gains nothing, as pressure changes slowly.",
-          "elevation": "Only needed when using absolute pressure. Prefilled from your Home Assistant configuration."
+          "elevation": "Only needed when using absolute pressure. Prefilled from your Home Assistant configuration.",
+          "solar_sensor": "Can be added here if the integration was set up before version 0.3.0.",
+          "solar_calibration": "If cloud cover is reported on cloudless days, your sensor reads low: set below 1. If it reports sunny under an overcast sky, set above 1."
         }
       }
     }
@@ -51,11 +57,27 @@
     "weather": {
       "local_forecast": {
         "state_attributes": {
-          "zambretti_code": { "name": "Zambretti code" },
-          "zambretti_text": { "name": "Forecast text" },
-          "pressure_trend": { "name": "Pressure trend" },
-          "sea_level_pressure": { "name": "Sea level pressure" },
-          "sample_count": { "name": "Samples in trend window" }
+          "zambretti_code": {
+            "name": "Zambretti code"
+          },
+          "zambretti_text": {
+            "name": "Forecast text"
+          },
+          "pressure_trend": {
+            "name": "Pressure trend"
+          },
+          "sea_level_pressure": {
+            "name": "Sea level pressure"
+          },
+          "sample_count": {
+            "name": "Samples in trend window"
+          },
+          "clear_sky_index": {
+            "name": "Clear-sky index"
+          },
+          "condition_source": {
+            "name": "Condition source"
+          }
         }
       }
     }
