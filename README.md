@@ -15,6 +15,7 @@ Automatisierungen, die auf `weather.*` reagieren.
 - [Installation](#installation)
 - [Einrichtung](#einrichtung)
 - [Wie es funktioniert](#wie-es-funktioniert)
+- [Warum stündlich, und warum sechs Einträge](#warum-stündlich-und-warum-sechs-einträge)
 - [Zuordnungstabelle](#zuordnungstabelle)
 - [Attribute](#attribute)
 - [Optionen](#optionen)
@@ -100,6 +101,27 @@ Ausblick auf die nächsten Stunden. Die Reihenfolge ist deshalb:
 3. Bei `sunny` nach Sonnenuntergang wird auf `clear-night` gewechselt. Home
    Assistant macht das **nicht** von selbst — im Core existiert die Konstante,
    aber keine automatische Umsetzung.
+
+## Warum stündlich, und warum sechs Einträge
+
+Diese Entscheidung wurde in 0.1.1 gegen die ursprüngliche Absicht getroffen und
+gehört erklärt.
+
+Fachlich richtig wäre *ein* Prognoseeintrag gewesen — das Verfahren liefert
+genau eine Aussage. Genau so war 0.1.0 gebaut. In der Praxis drehte sich damit
+in der Wetterkarte dauerhaft der Ladekreis, ohne Fehlermeldung im Protokoll.
+
+Ursache: das Home-Assistant-Frontend stellt eine Prognose erst ab **mehr als
+zwei** Einträgen dar. Die Funktion `getForecast()` in
+`frontend/src/data/weather.ts` prüft `forecast.length > 2` und gibt sonst
+`undefined` zurück — die Anzeige bleibt dann im Ladezustand hängen. Das
+Backend arbeitete korrekt und lieferte seinen einen Eintrag aus; er wurde nur
+nie gerendert.
+
+Von den drei möglichen Prognosearten passt die stündliche am besten: „gleiche
+Erwartung für die nächsten sechs Stunden" ist genau das, was das Verfahren
+aussagt. Eine zweimal-tägliche Prognose hätte drei Einträge gebraucht und damit
+eine Aussage über *morgen* erfunden, die es nicht gibt.
 
 ## Zuordnungstabelle
 
@@ -190,14 +212,19 @@ Diese Punkte sind bewusst so und stehen hier, damit niemand sie erst im Betrieb
 entdeckt:
 
 - **Kein Mehrtagesausblick.** Das Verfahren liefert genau *einen* Ausblick auf
-  die nächsten etwa 6–12 Stunden. Die Wetterkarte zeigt entsprechend nur einen
-  Prognoseeintrag, keine Wochenvorschau. Wer eine Wochenvorschau braucht, ist
-  bei Met.no oder DWD richtig — diese Integration ersetzt sie nicht, sondern
+  die nächsten etwa 6–12 Stunden. Wer eine Wochenvorschau braucht, ist bei
+  Met.no oder DWD richtig — diese Integration ersetzt sie nicht, sondern
   ergänzt sie um eine Einschätzung für den *eigenen* Standort.
+- **Die sechs Prognoseeinträge sind identisch.** Sie verteilen eine einzige
+  Aussage über ihren Gültigkeitszeitraum und enthalten *keine* eigenständige
+  stündliche Auflösung. Mehrere Einträge sind technisch nötig (siehe
+  [Warum stündlich](#warum-stündlich-und-warum-sechs-einträge)) — sie
+  vortäuschen keine Detailtiefe, die das Verfahren nicht hat.
 - **Keine Temperaturprognose.** Das Feld `native_temperature` ist im
   Prognosedatensatz von Home Assistant verpflichtend. Da es kein
-  Temperaturmodell gibt, wird dort der *aktuelle* Messwert eingetragen. Wer den
-  Prognoseeintrag auswertet, darf diesen Wert nicht als Vorhersage lesen.
+  Temperaturmodell gibt, wird dort der *aktuelle* Messwert eingetragen — in
+  allen sechs Einträgen derselbe. Wer den Prognoseeintrag auswertet, darf
+  diesen Wert nicht als Vorhersage lesen.
 - **Nur gemäßigte Breiten.** Die Koeffizienten sind für das nordwesteuropäische
   Wettergeschehen kalibriert. Für Deutschland gut geeignet, in den Tropen oder
   im Hochgebirge unbrauchbar.
@@ -228,7 +255,7 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
 
 **Geprüft:**
 
-- 31 Testfälle gegen `zambretti.py`, alle grün
+- 32 Testfälle, alle grün
   (`python3 -m unittest discover -s tests`). `zambretti.py` importiert bewusst
   nichts aus Home Assistant und ist deshalb vollständig ohne laufende Instanz
   testbar.
@@ -245,7 +272,8 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
 **Nicht geprüft:**
 
 - Kein Lauf gegen eine echte Home-Assistant-Installation. Der Einrichtungs- und
-  Optionsdialog, das Vorfüllen aus dem Recorder und das Rendern der Wetterkarte
-  sind bislang nur auf Symbolebene abgesichert, nicht im Betrieb beobachtet.
+  Optionsdialog sowie das Vorfüllen aus dem Recorder sind nur auf Symbolebene
+  abgesichert. Das Rendern der Wetterkarte wurde in 0.1.0 an echter Hardware
+  getestet — dabei kam der oben beschriebene Fehler heraus.
 - Keine Messung gegen echte Wetterdaten. Wie treffsicher die Prognose an deinem
   Standort ist, zeigt erst der Vergleich über mehrere Wochen.
