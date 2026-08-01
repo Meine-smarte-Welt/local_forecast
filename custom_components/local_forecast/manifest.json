@@ -1,0 +1,13 @@
+{
+  "domain": "local_forecast",
+  "name": "Lokale Wetterprognose",
+  "codeowners": ["@Meine-smarte-Welt"],
+  "config_flow": true,
+  "documentation": "https://github.com/Meine-smarte-Welt/local_forecast",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/Meine-smarte-Welt/local_forecast/issues",
+  "after_dependencies": ["recorder"],
+  "requirements": [],
+  "version": "0.1.0"
+}

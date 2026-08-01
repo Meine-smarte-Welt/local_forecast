@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Lokale Wetterprognose einrichten",
+        "description": "Wähle die Sensoren deiner Wetterstation aus. Zwingend nötig sind Luftdruck und Temperatur; Windrichtung verbessert das Ergebnis deutlich.\n\nWichtig: Wähle beim Luftdruck den RELATIVEN Druck des Gateways (bereits auf Meereshöhe reduziert). Nur wenn du den absoluten Druck auswählst, setze den Schalter darunter.",
+        "data": {
+          "name": "Name",
+          "pressure_sensor": "Luftdruck",
+          "pressure_is_absolute": "Der gewählte Sensor liefert den absoluten Druck",
+          "temperature_sensor": "Außentemperatur",
+          "humidity_sensor": "Luftfeuchte",
+          "wind_bearing_sensor": "Windrichtung",
+          "wind_speed_sensor": "Windgeschwindigkeit",
+          "rain_rate_sensor": "Regenrate"
+        },
+        "data_description": {
+          "pressure_sensor": "Beim Ecowitt-Gateway (z. B. GW2000) heißt die Entität meist „Relativer Luftdruck“.",
+          "pressure_is_absolute": "Nur aktivieren, wenn du bewusst den absoluten Druck gewählt hast. Die Reduktion auf Meereshöhe erfolgt dann anhand der Höhe aus den Optionen.",
+          "wind_bearing_sensor": "In Grad (0-360). Ohne diesen Sensor rechnet das Verfahren weiter, wird aber ungenauer.",
+          "rain_rate_sensor": "In mm/h. Wird genutzt, um bei tatsächlichem Regen den gemessenen Zustand statt der Prognose anzuzeigen."
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Diese Entität existiert nicht.",
+      "not_numeric": "Diese Entität liefert derzeit keinen Zahlenwert."
+    },
+    "abort": {
+      "already_configured": "Für diesen Drucksensor gibt es bereits eine Prognose."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lokale Wetterprognose",
+        "data": {
+          "trend_hours": "Trendfenster",
+          "update_interval": "Aktualisierungstakt",
+          "elevation": "Höhe über NN"
+        },
+        "data_description": {
+          "trend_hours": "Zeitraum, über den die Drucktendenz berechnet wird. Das Verfahren ist klassisch auf 3 Stunden ausgelegt.",
+          "update_interval": "Wie oft neu gerechnet wird. Häufiger als alle paar Minuten bringt nichts, da sich der Luftdruck langsam ändert.",
+          "elevation": "Wird nur gebraucht, wenn der absolute Druck verwendet wird. Vorbelegt mit der Höhe aus deiner Home-Assistant-Konfiguration."
+        }
+      }
+    }
+  },
+  "entity": {
+    "weather": {
+      "local_forecast": {
+        "state_attributes": {
+          "zambretti_code": { "name": "Zambretti-Code" },
+          "zambretti_text": { "name": "Prognosetext" },
+          "pressure_trend": { "name": "Drucktendenz" },
+          "sea_level_pressure": { "name": "Druck auf Meereshöhe" },
+          "sample_count": { "name": "Messwerte im Trendfenster" }
+        }
+      }
+    }
+  }
+}
