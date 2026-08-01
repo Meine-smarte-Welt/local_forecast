@@ -40,6 +40,12 @@ MIN_SAMPLES_FOR_TREND: Final = 3
 PRESSURE_SANITY_MIN: Final = 870.0
 PRESSURE_SANITY_MAX: Final = 1085.0
 
+#: Anzahl der Prognoseeinträge. MUSS größer als 2 sein: das Home-Assistant-
+#: Frontend stellt eine Prognose erst ab mehr als zwei Einträgen dar
+#: (getForecast() in frontend/src/data/weather.ts prüft `forecast.length > 2`).
+#: Bei weniger Einträgen dreht sich in der Karte dauerhaft der Ladekreis.
+FORECAST_ENTRY_COUNT: Final = 6
+
 #: Attributnamen der Weather-Entity
 ATTR_ZAMBRETTI_CODE: Final = "zambretti_code"
 ATTR_ZAMBRETTI_TEXT: Final = "zambretti_text"

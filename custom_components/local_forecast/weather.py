@@ -21,7 +21,7 @@ from homeassistant.const import (
     UnitOfSpeed,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -29,6 +29,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_PRESSURE_TREND,
+    FORECAST_ENTRY_COUNT,
     ATTR_SAMPLE_COUNT,
     ATTR_SEA_LEVEL_PRESSURE,
     ATTR_ZAMBRETTI_CODE,
@@ -65,7 +66,12 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
     _attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
     _attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
 
-    _attr_supported_features = WeatherEntityFeature.FORECAST_TWICE_DAILY
+    # Bewusst stündlich statt zweimal täglich: das Frontend rendert eine
+    # Prognose erst ab MEHR ALS ZWEI Einträgen (getForecast() in
+    # frontend/src/data/weather.ts prüft `forecast.length > 2`). Ein einzelner
+    # Eintrag - was dem Verfahren eigentlich entspräche - lässt die Anzeige
+    # dauerhaft im Ladezustand hängen. Siehe README.
+    _attr_supported_features = WeatherEntityFeature.FORECAST_HOURLY
 
     def __init__(
         self,
@@ -178,30 +184,47 @@ class LocalForecastWeather(CoordinatorEntity[LocalForecastCoordinator], WeatherE
     # Prognose
     # ------------------------------------------------------------------
 
-    async def async_forecast_twice_daily(self) -> list[Forecast] | None:
-        """Gib den Zambretti-Ausblick als einzelnen Prognoseeintrag zurück.
+    async def async_forecast_hourly(self) -> list[Forecast] | None:
+        """Gib den Zambretti-Ausblick als stündliche Einträge zurück.
 
-        Das Verfahren liefert genau EINEN Ausblick für die nächsten etwa
-        6 bis 12 Stunden - deshalb steht hier auch nur ein Eintrag und keine
-        Mehrtagesreihe. Eine Temperaturprognose gibt es nicht; da das Feld
-        verpflichtend ist, wird der aktuelle Messwert eingetragen. Das ist in
-        der README als bekannte Einschränkung dokumentiert.
+        Wichtig zum Verständnis: das Verfahren liefert GENAU EINEN Ausblick für
+        die kommenden Stunden. Die hier erzeugten Einträge tragen deshalb alle
+        dieselbe Vorhersage - sie verteilen eine einzige Aussage über ihren
+        Gültigkeitszeitraum und enthalten KEINE eigenständige stündliche
+        Auflösung. Mehrere Einträge sind nötig, weil das Frontend eine Prognose
+        erst ab mehr als zwei Einträgen darstellt.
+
+        Eine Temperaturprognose gibt es nicht. Da das Feld verpflichtend ist,
+        steht dort der aktuelle Messwert - er darf nicht als Vorhersage
+        gelesen werden.
         """
         data = self._data
         if data is None or data.result is None:
             return None
 
         now = dt_util.utcnow()
-        target = now + timedelta(hours=6)
-
         return [
             Forecast(
-                datetime=target.isoformat(),
-                is_daytime=self._is_daytime(),
+                datetime=(now + timedelta(hours=hour)).isoformat(),
                 condition=data.result.condition,
                 native_temperature=data.temperature,
                 native_pressure=data.pressure,
                 wind_bearing=data.wind_bearing,
                 native_wind_speed=data.wind_speed,
             )
+            for hour in range(1, FORECAST_ENTRY_COUNT + 1)
         ]
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Neuen Zustand schreiben UND die Prognose an Abonnenten schieben.
+
+        Ohne den zweiten Teil bliebe eine geöffnete Wetterkarte auf dem Stand
+        vom Abo-Zeitpunkt stehen - der Zustand würde sich aktualisieren, die
+        Prognose darunter aber nicht.
+        """
+        if self.platform is not None and self.platform.config_entry is not None:
+            self.platform.config_entry.async_create_task(
+                self.hass, self.async_update_listeners(("hourly",))
+            )
+        super()._handle_coordinator_update()

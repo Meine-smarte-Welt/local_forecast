@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/Meine-smarte-Welt/local_forecast/issues",
   "after_dependencies": ["recorder"],
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
