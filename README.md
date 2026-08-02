@@ -236,6 +236,9 @@ entity: weather.lokale_wetterprognose
 |---|---|---|
 | `entity` | — | Pflicht, muss aus der Domäne `weather` stammen |
 | `show_chart` | `true` | Barografen anzeigen |
+| `smooth` | `true` | Sensorrauschen in der Kurve glätten |
+| `show_forecast` | `true` | Ausblick anzeigen |
+| `forecast_style` | `band` | `band` oder `hourly` |
 | `hours` | Trendfenster der Integration | Zeitraum des Barografen abweichend festlegen |
 
 **Was die Karte zeigt, das die mitgelieferte nicht kann:** den Druckverlauf,
@@ -245,9 +248,37 @@ Verfahren tatsächlich rechnet. Damit siehst du nicht nur das Ergebnis, sondern
 auch seine Eingabe — und erkennst sofort, ob eine überraschende Prognose auf
 einem echten Drucksturz beruht oder auf einem Ausreißer.
 
-Bewusst **keine** Stundenleiste: die sechs Prognoseeinträge sind identisch
-(siehe oben), eine Leiste mit sechsmal demselben Symbol täuscht Detailtiefe
-vor. Wer sie sehen will, stellt die mitgelieferte Wetterkarte daneben.
+### Der Ausblick, und warum er als Band dargestellt wird
+
+Die Karte holt die Prognose über dasselbe Abo, das auch die mitgelieferte
+Wetterkarte verwendet (`weather/subscribe_forecast`) — sie baut sie nicht aus
+dem Zambretti-Text nach. Damit zeigt sie exakt das, was das Backend ausliefert,
+inklusive der stündlichen Tag/Nacht-Korrektur.
+
+In der Vorgabe `band` erscheint **ein** Symbol mit dem Zeitraum, für den es
+gilt („bis 5:30 Uhr, durchgehend gleiche Erwartung"). Das entspricht dem, was
+das Verfahren tatsächlich aussagt: eine Aussage über die kommenden Stunden,
+keine sechs unabhängigen Stundenwerte. Sind die Einträge einmal nicht
+einheitlich — etwa weil die Sonne dazwischen untergeht — entfällt der Zusatz.
+
+Wer die gewohnte Stundenleiste bevorzugt, setzt `forecast_style: hourly`. Sie
+zeigt dann sechs Spalten, die in aller Regel dasselbe Symbol tragen. Das ist
+keine Fehlfunktion, sondern die ehrliche Folge daraus, dass dahinter eine
+einzige Aussage steht.
+
+**Zur Glättung:** Der Drucksensor löst feiner auf, als das Wetter sich ändert.
+Über drei Stunden zappelt der Messwert um wenige Hundertstel hPa hin und her,
+was die Kurve zu einem Seismogramm macht, obwohl meteorologisch nichts
+passiert. Ein gleitender Median über sechs Werte entfernt genau dieses Zappeln.
+Bewusst ein Median und kein Mittelwert: Ein echter Drucksturz bleibt als
+Sprung erhalten, statt verschliffen zu werden. **Geglättet wird nur das Bild —
+die Prognose rechnet weiterhin auf den Rohdaten.** Wer die Rohwerte sehen will,
+setzt `smooth: false`.
+
+Die Fensterbreite ist bewusst *gerade*. Bei ungerader Breite wählt ein Median
+schlicht den Mehrheitswert, und ein gleichmäßiges Hin-und-Her zwischen zwei
+Werten — genau das typische Sensorzappeln — wandert unverändert mit. Ein
+Testfall hält das fest.
 
 Der Barograf braucht den Recorder. Zeichnet dieser den Drucksensor nicht auf,
 zeigt die Karte das als Hinweis an, statt leer zu bleiben.
@@ -359,7 +390,7 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Größte Abweichung an Thorstens Standort 0,009°, weltweit (Kapstadt,
   Reykjavík, Singapur) unter 0,011°. Der Vergleich steckt als Testfall im
   Repository und wird übersprungen, wenn `astral` nicht installiert ist.
-- 21 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`).
+- 35 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`).
   Geprüft werden unter anderem das deutsche Zahlenformat, die Benennung der
   Tendenzrichtung an ihren Schwellwerten, das Lesen der Kurzform von
   Verlaufsdaten (`s`/`lu`/`lc`), das Überspringen von `unavailable`-Werten,
@@ -385,6 +416,14 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Browser. Geprüft ist die erzeugte Auszeichnung, nicht ihr Aussehen.
 
 ## Versionshistorie
+
+**0.4.0** — Ausblick in der Karte, bezogen über das Prognose-Abo von Home
+Assistant. Wahlweise als Band mit Gültigkeitszeitraum (Vorgabe) oder als
+Stundenleiste.
+
+**0.3.1** — Barograf glättet Sensorrauschen (gleitender Median, nur für die
+Darstellung). Einheitliches Minuszeichen, Tabellenziffern statt Monospace bei
+der Druckanzeige.
 
 **0.3.0** — Der aktuelle Zustand wird bei Tageslicht aus der
 Sonneneinstrahlung **gemessen** statt aus der Prognose abgeleitet. Neues Feld

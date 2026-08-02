@@ -13,7 +13,7 @@
  * sofort falsch aussehen; eine Karte hat sich in ihre Umgebung einzufügen.
  */
 
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.4.0";
 
 const STRINGS = {
   noEntity: "Keine Entität angegeben. Bitte in der Kartenkonfiguration eine Entität der Domäne weather auswählen.",
@@ -25,6 +25,10 @@ const STRINGS = {
   now: "jetzt",
   samples: (n) => `${n} Messwerte`,
   covered: (p) => `${p} % bedeckt`,
+  outlook: "Ausblick",
+  until: (time) => `bis ${time} Uhr`,
+  unchanged: "durchgehend gleiche Erwartung",
+  noForecast: "Noch keine Prognose abrufbar.",
   rising: "steigend",
   falling: "fallend",
   steady: "gleichbleibend",
@@ -33,11 +37,83 @@ const STRINGS = {
 /** Ab dieser Tendenz gilt der Druck als steigend bzw. fallend (wie im Backend). */
 const TREND_THRESHOLD = 0.1;
 
+/**
+ * Fensterbreite des gleitenden Medians. Bewusst GERADE.
+ *
+ * Bei ungerader Breite wählt der Median schlicht den Mehrheitswert - ein
+ * gleichmäßiges Hin-und-Her zwischen zwei Werten, genau das typische
+ * Sensorzappeln, wandert dann unverändert mit. Bei gerader Breite wird
+ * zwischen den beiden mittleren Werten gemittelt, und das Zappeln
+ * verschwindet. Ein Testfall in tests/test_card.js hält das fest.
+ */
+const SMOOTHING_WINDOW = 6;
+
+/** Zustand -> Symbol. Dieselben Symbole, die Home Assistant selbst verwendet. */
+const CONDITION_ICONS = {
+  "clear-night": "mdi:weather-night",
+  cloudy: "mdi:weather-cloudy",
+  exceptional: "mdi:alert-circle-outline",
+  fog: "mdi:weather-fog",
+  hail: "mdi:weather-hail",
+  lightning: "mdi:weather-lightning",
+  "lightning-rainy": "mdi:weather-lightning-rainy",
+  partlycloudy: "mdi:weather-partly-cloudy",
+  pouring: "mdi:weather-pouring",
+  rainy: "mdi:weather-rainy",
+  snowy: "mdi:weather-snowy",
+  "snowy-rainy": "mdi:weather-snowy-rainy",
+  sunny: "mdi:weather-sunny",
+  windy: "mdi:weather-windy",
+  "windy-variant": "mdi:weather-windy-variant",
+};
+
+const timeFormat = (date) =>
+  new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(
+    date
+  );
+
+// Intl liefert einen Bindestrich; die Zeitachse verwendet ein echtes
+// Minuszeichen. Beides nebeneinander sieht nach Versehen aus.
+const MINUS_SIGN = "\u2212";
+
 const numberFormat = (value, digits) =>
   new Intl.NumberFormat("de-DE", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-  }).format(value);
+  })
+    .format(value)
+    .replace(/^-/, MINUS_SIGN);
+
+/**
+ * Gleitender Median über die Druckwerte - nur für die DARSTELLUNG.
+ *
+ * Der Sensor löst feiner auf, als das Wetter sich ändert: über drei Stunden
+ * schwankt der Messwert um wenige Hundertstel hPa hin und her, was die Kurve
+ * zu einem Seismogramm macht, obwohl sich meteorologisch nichts tut. Der
+ * Median entfernt genau dieses Zappeln, ohne echte Sprünge abzurunden - anders
+ * als ein Mittelwert, der einen echten Drucksturz verschleifen würde.
+ *
+ * Die BERECHNUNG der Prognose läuft weiterhin auf den Rohdaten. Geglättet wird
+ * ausschließlich das Bild.
+ */
+const smoothed = (points, window) => {
+  if (points.length < window || window < 3) return points;
+  const half = Math.floor(window / 2);
+  return points.map((point, i) => {
+    // An den Rändern wird das Fenster verschoben statt beschnitten. Sonst
+    // enthielte es dort weniger - und womöglich ungerade viele - Werte, und
+    // genau am Anfang und Ende der Kurve bliebe das Zappeln stehen.
+    const from = Math.min(Math.max(0, i - half), points.length - window);
+    const slice = points.slice(from, from + window);
+    const values = slice.map((p) => p[1]).sort((a, b) => a - b);
+    const middle = Math.floor(values.length / 2);
+    const median =
+      values.length % 2
+        ? values[middle]
+        : (values[middle - 1] + values[middle]) / 2;
+    return [point[0], median];
+  });
+};
 
 class LocalForecastCard extends HTMLElement {
   constructor() {
@@ -58,6 +134,11 @@ class LocalForecastCard extends HTMLElement {
     }
     this._config = {
       show_chart: true,
+      smooth: true,
+      show_forecast: true,
+      // "band"   - eine Aussage mit ihrem Gültigkeitszeitraum (Vorgabe)
+      // "hourly" - eine Spalte je Stunde, wie in der mitgelieferten Karte
+      forecast_style: "band",
       hours: null, // null = Trendfenster der Integration übernehmen
       ...config,
     };
@@ -68,11 +149,22 @@ class LocalForecastCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._maybeFetchHistory();
+    this._maybeSubscribeForecast();
     this._render();
   }
 
+  disconnectedCallback() {
+    if (this._unsubForecast) {
+      this._unsubForecast();
+      this._unsubForecast = null;
+    }
+  }
+
   getCardSize() {
-    return this._config && this._config.show_chart ? 4 : 2;
+    let size = 2;
+    if (this._config && this._config.show_chart) size += 2;
+    if (this._config && this._config.show_forecast) size += 1;
+    return size;
   }
 
   static getStubConfig(hass) {
@@ -80,6 +172,91 @@ class LocalForecastCard extends HTMLElement {
       id.startsWith("weather.")
     );
     return { type: "custom:local-forecast-card", entity: entity || "" };
+  }
+
+  // ----------------------------------------------------------------------
+  // Prognose
+  // ----------------------------------------------------------------------
+
+  async _maybeSubscribeForecast() {
+    if (!this._config.show_forecast || this._unsubForecast || this._subscribing) {
+      return;
+    }
+    if (!this._hass || !this._hass.connection) return;
+    if (!this._hass.states[this._config.entity]) return;
+
+    this._subscribing = true;
+    try {
+      // Die Prognose steht bewusst NICHT in den Attributen der Entität -
+      // Home Assistant liefert sie über ein Abo aus. Genau das wird hier
+      // genutzt, statt sie aus dem Zambretti-Text nachzubauen: so zeigt die
+      // Karte exakt das, was auch die mitgelieferte Wetterkarte bekäme,
+      // inklusive der stündlichen Tag/Nacht-Korrektur aus dem Backend.
+      this._unsubForecast = await this._hass.connection.subscribeMessage(
+        (event) => {
+          this._forecast = (event && event.forecast) || [];
+          this._lastRenderKey = null;
+          this._render();
+        },
+        {
+          type: "weather/subscribe_forecast",
+          entity_id: this._config.entity,
+          forecast_type: "hourly",
+        }
+      );
+    } catch (err) {
+      this._forecast = [];
+    } finally {
+      this._subscribing = false;
+    }
+  }
+
+  _renderForecast() {
+    if (!this._config.show_forecast) return "";
+    if (!this._forecast) return "";
+    if (!this._forecast.length) {
+      return `<div class="section"><div class="hint">${STRINGS.noForecast}</div></div>`;
+    }
+
+    const entries = this._forecast
+      .map((item) => ({
+        when: new Date(item.datetime),
+        icon: CONDITION_ICONS[item.condition] || "mdi:help-circle-outline",
+        condition: item.condition,
+      }))
+      .filter((item) => !isNaN(item.when.getTime()));
+    if (!entries.length) return "";
+
+    if (this._config.forecast_style === "hourly") {
+      const columns = entries
+        .map(
+          (item) => `
+            <div class="hour">
+              <div class="hour-time">${timeFormat(item.when)}</div>
+              <ha-icon icon="${item.icon}"></ha-icon>
+            </div>`
+        )
+        .join("");
+      return `<div class="section"><div class="label">${STRINGS.outlook}</div><div class="hours">${columns}</div></div>`;
+    }
+
+    // Vorgabe: EINE Aussage mit ihrem Gültigkeitszeitraum. Das Verfahren
+    // liefert nicht sechs Stundenwerte, sondern einen Ausblick - sechs
+    // gleiche Symbole nebeneinander würden eine Auflösung vortäuschen,
+    // die es nicht gibt.
+    const last = entries[entries.length - 1];
+    const uniform = entries.every((item) => item.condition === entries[0].condition);
+    return `
+      <div class="section">
+        <div class="label">${STRINGS.outlook}</div>
+        <div class="band">
+          <ha-icon class="band-icon" icon="${entries[0].icon}"></ha-icon>
+          <div class="band-text">
+            <div class="band-main">${STRINGS.until(timeFormat(last.when))}</div>
+            ${uniform ? `<div class="band-sub">${STRINGS.unchanged}</div>` : ""}
+          </div>
+        </div>
+      </div>`;
   }
 
   // ----------------------------------------------------------------------
@@ -155,9 +332,11 @@ class LocalForecastCard extends HTMLElement {
   // ----------------------------------------------------------------------
 
   _renderChart(stateObj) {
-    const points = this._history;
-    if (!points) return `<div class="hint">${STRINGS.chartLabel} wird geladen …</div>`;
-    if (points.length < 2) return `<div class="hint">${STRINGS.noHistory}</div>`;
+    const raw = this._history;
+    if (!raw) return `<div class="hint">${STRINGS.chartLabel} wird geladen …</div>`;
+    if (raw.length < 2) return `<div class="hint">${STRINGS.noHistory}</div>`;
+
+    const points = this._config.smooth ? smoothed(raw, SMOOTHING_WINDOW) : raw;
 
     const W = 320;
     const H = 88;
@@ -283,6 +462,7 @@ class LocalForecastCard extends HTMLElement {
         </div>
       </div>
       ${chart}
+      ${this._renderForecast()}
       <div class="foot">
         <span class="value">${numberFormat(pressure, 1)} hPa</span>
         <span class="trend-word">${arrow} ${trendWord}, ${numberFormat(trend, 2)} hPa/h</span>
@@ -372,6 +552,57 @@ class LocalForecastCard extends HTMLElement {
           font-size: 11px;
           color: var(--secondary-text-color);
         }
+        .section {
+          margin-top: 14px;
+          padding-top: 12px;
+          border-top: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .label {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--secondary-text-color);
+          margin-bottom: 8px;
+        }
+        .band {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .band-icon {
+          --mdc-icon-size: 32px;
+          color: var(--state-icon-color, var(--primary-text-color));
+        }
+        .band-main {
+          font-size: 15px;
+          color: var(--primary-text-color);
+        }
+        .band-sub {
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
+        .hours {
+          display: flex;
+          justify-content: space-between;
+          gap: 4px;
+        }
+        .hour {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          flex: 1 1 0;
+          min-width: 0;
+        }
+        .hour-time {
+          font-size: 11px;
+          color: var(--secondary-text-color);
+          font-variant-numeric: tabular-nums;
+        }
+        .hour ha-icon {
+          --mdc-icon-size: 24px;
+          color: var(--state-icon-color, var(--primary-text-color));
+        }
         .foot {
           display: flex;
           justify-content: space-between;
@@ -384,7 +615,10 @@ class LocalForecastCard extends HTMLElement {
           color: var(--secondary-text-color);
         }
         .value {
-          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          /* Tabellenziffern statt voller Monospace: gleiche Ziffernbreite,
+             aber ohne die aufgerissene Anmutung, die eine Schreibmaschinen-
+             schrift bei einer Zahl wie 1.023,5 erzeugt. */
+          font-variant-numeric: tabular-nums;
           font-size: 15px;
           color: var(--primary-text-color);
         }
