@@ -1,9 +1,0 @@
-{
-  "entity": {
-    "weather": {
-      "local_forecast": {
-        "default": "mdi:gauge"
-      }
-    }
-  }
-}
