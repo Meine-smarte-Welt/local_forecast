@@ -390,7 +390,7 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Größte Abweichung an Thorstens Standort 0,009°, weltweit (Kapstadt,
   Reykjavík, Singapur) unter 0,011°. Der Vergleich steckt als Testfall im
   Repository und wird übersprungen, wenn `astral` nicht installiert ist.
-- 35 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`).
+- 37 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`).
   Geprüft werden unter anderem das deutsche Zahlenformat, die Benennung der
   Tendenzrichtung an ihren Schwellwerten, das Lesen der Kurzform von
   Verlaufsdaten (`s`/`lu`/`lc`), das Überspringen von `unavailable`-Werten,
@@ -416,6 +416,11 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Browser. Geprüft ist die erzeugte Auszeichnung, nicht ihr Aussehen.
 
 ## Versionshistorie
+
+**0.4.1** — Behebt einen Ladekreis in der Kartenauswahl: `setConfig` warf bei
+leerer Entität eine Ausnahme und hängte die Vorschau auf. Das Symbol-Element
+`ha-icon` wird jetzt aktiv vorgeladen, damit die Prognosesymbole auch auf einem
+Dashboard erscheinen, das nur aus dieser Karte besteht.
 
 **0.4.0** — Ausblick in der Karte, bezogen über das Prognose-Abo von Home
 Assistant. Wahlweise als Band mit Gültigkeitszeitraum (Vorgabe) oder als

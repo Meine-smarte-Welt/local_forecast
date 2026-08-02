@@ -13,7 +13,7 @@
  * sofort falsch aussehen; eine Karte hat sich in ihre Umgebung einzufügen.
  */
 
-const CARD_VERSION = "0.4.0";
+const CARD_VERSION = "0.4.1";
 
 const STRINGS = {
   noEntity: "Keine Entität angegeben. Bitte in der Kartenkonfiguration eine Entität der Domäne weather auswählen.",
@@ -126,11 +126,18 @@ class LocalForecastCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config || !config.entity) {
+    // Bewusst KEINE Ausnahme bei fehlender Entität: die Kartenauswahl ruft
+    // setConfig mit dem leeren Stub auf, und eine geworfene Ausnahme lässt
+    // die Vorschau dauerhaft im Ladekreis hängen. Der Mangel wird stattdessen
+    // vermerkt und beim Rendern als Hinweis angezeigt.
+    if (!config) {
       throw new Error(STRINGS.noEntity);
     }
-    if (!config.entity.startsWith("weather.")) {
-      throw new Error(STRINGS.wrongDomain);
+    this._configError = null;
+    if (!config.entity) {
+      this._configError = STRINGS.noEntity;
+    } else if (!config.entity.startsWith("weather.")) {
+      this._configError = STRINGS.wrongDomain;
     }
     this._config = {
       show_chart: true,
@@ -150,6 +157,9 @@ class LocalForecastCard extends HTMLElement {
     this._hass = hass;
     this._maybeFetchHistory();
     this._maybeSubscribeForecast();
+    if (this._config && this._config.show_forecast) {
+      this._ensureIconElement();
+    }
     this._render();
   }
 
@@ -177,6 +187,32 @@ class LocalForecastCard extends HTMLElement {
   // ----------------------------------------------------------------------
   // Prognose
   // ----------------------------------------------------------------------
+
+  async _ensureIconElement() {
+    // ha-icon wird erst geladen, wenn irgendeine Standardkarte es schon
+    // benutzt hat. Auf einem Dashboard, das nur aus dieser Karte besteht,
+    // wäre es sonst nie definiert und alle Symbole blieben leer.
+    if (this._iconReady || typeof customElements === "undefined") return;
+    if (customElements.get("ha-icon")) {
+      this._iconReady = true;
+      return;
+    }
+    try {
+      const helpers = await window.loadCardHelpers?.();
+      if (helpers) {
+        const card = await helpers.createCardElement({ type: "weather-forecast", entity: this._config.entity });
+        card.constructor?.getConfigElement?.();
+      }
+      await customElements.whenDefined("ha-icon");
+      this._iconReady = true;
+      this._lastRenderKey = null;
+      this._render();
+    } catch (err) {
+      // Zur Not ohne vorgeladenes Icon weiter - besser leeres Symbol als
+      // hängende Karte.
+      this._iconReady = true;
+    }
+  }
 
   async _maybeSubscribeForecast() {
     if (!this._config.show_forecast || this._unsubForecast || this._subscribing) {
@@ -410,7 +446,17 @@ class LocalForecastCard extends HTMLElement {
   // ----------------------------------------------------------------------
 
   _render() {
-    if (!this._config || !this._hass) return;
+    if (!this._config) return;
+
+    if (this._configError) {
+      this._paint(`<div class="hint">${this._configError}</div>`);
+      return;
+    }
+    // In der Kartenvorschau ist hass mitunter noch nicht gesetzt.
+    if (!this._hass) {
+      this._paint(`<div class="hint">${STRINGS.chartLabel} …</div>`);
+      return;
+    }
 
     const stateObj = this._hass.states[this._config.entity];
     if (!stateObj) {

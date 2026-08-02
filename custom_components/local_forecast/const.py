@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "local_forecast"
-VERSION: Final = "0.4.0"
+VERSION: Final = "0.4.1"
 
 #: Lovelace-Karte
 CARD_FILENAME: Final = "local-forecast-card.js"
