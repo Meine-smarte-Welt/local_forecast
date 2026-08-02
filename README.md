@@ -408,7 +408,9 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Größte Abweichung an Thorstens Standort 0,009°, weltweit (Kapstadt,
   Reykjavík, Singapur) unter 0,011°. Der Vergleich steckt als Testfall im
   Repository und wird übersprungen, wenn `astral` nicht installiert ist.
-- 37 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`).
+- 38 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`),
+  darunter einer, der das **doppelte Laden** der Datei nachstellt und sicher-
+  stellt, dass der zweite Ladevorgang keinen `define`-Fehler wirft.
 - 7 Testfälle gegen die Ressourcen-Registrierung (`frontend.py`), alle grün:
   Pfad wird registriert, im Storage-Modus entsteht eine Ressource, im
   YAML-Modus nicht, eine veraltete wird aktualisiert statt verdoppelt, fremde
@@ -438,6 +440,14 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Browser. Geprüft ist die erzeugte Auszeichnung, nicht ihr Aussehen.
 
 ## Versionshistorie
+
+**0.4.3** — Karte vollständig neu geschrieben, um den Ladekreis strukturell
+auszuschließen. `customElements.define` ist jetzt gegen Doppelregistrierung
+geschützt: Wurde die Datei zweimal geladen (etwa manueller Ressourceneintrag
+zusätzlich zur Auto-Registrierung), warf der zweite Aufruf früher eine
+Ausnahme, die das Laden abbrach und die Karte hängen ließ. Zusätzlich Wechsel
+von Shadow DOM zu Light DOM, damit `ha-icon` und `ha-card` sich zuverlässig
+laden.
 
 **0.4.2** — Die Karte trägt sich jetzt als echte Lovelace-Ressource ein statt
 nur als Frontend-Modul. Das behebt den Ladekreis, der auftrat, weil die frühere
