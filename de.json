@@ -1,0 +1,85 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Lokale Wetterprognose einrichten",
+        "description": "Wähle die Sensoren deiner Wetterstation aus. Zwingend nötig sind Luftdruck und Temperatur; Windrichtung verbessert das Ergebnis deutlich.\n\nWichtig: Wähle beim Luftdruck den RELATIVEN Druck des Gateways (bereits auf Meereshöhe reduziert). Nur wenn du den absoluten Druck auswählst, setze den Schalter darunter.",
+        "data": {
+          "name": "Name",
+          "pressure_sensor": "Luftdruck",
+          "pressure_is_absolute": "Der gewählte Sensor liefert den absoluten Druck",
+          "temperature_sensor": "Außentemperatur",
+          "humidity_sensor": "Luftfeuchte",
+          "wind_bearing_sensor": "Windrichtung",
+          "wind_speed_sensor": "Windgeschwindigkeit",
+          "rain_rate_sensor": "Regenrate",
+          "solar_sensor": "Sonneneinstrahlung"
+        },
+        "data_description": {
+          "pressure_sensor": "Beim Ecowitt-Gateway (z. B. GW2000) heißt die Entität meist „Relativer Luftdruck“.",
+          "pressure_is_absolute": "Nur aktivieren, wenn du bewusst den absoluten Druck gewählt hast. Die Reduktion auf Meereshöhe erfolgt dann anhand der Höhe aus den Optionen.",
+          "wind_bearing_sensor": "In Grad (0-360). Ohne diesen Sensor rechnet das Verfahren weiter, wird aber ungenauer.",
+          "rain_rate_sensor": "In mm/h. Wird genutzt, um bei tatsächlichem Regen den gemessenen Zustand statt der Prognose anzuzeigen.",
+          "solar_sensor": "In W/m² oder Lux. Damit wird der aktuelle Wetterzustand gemessen statt aus der Prognose abgeleitet — deutlich genauer. Beim WS90/WS69 heißt die Entität meist „Sonneneinstrahlung“ oder „Beleuchtungsstärke“."
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Diese Entität existiert nicht.",
+      "not_numeric": "Diese Entität liefert derzeit keinen Zahlenwert."
+    },
+    "abort": {
+      "already_configured": "Für diesen Drucksensor gibt es bereits eine Prognose."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lokale Wetterprognose",
+        "data": {
+          "trend_hours": "Trendfenster",
+          "update_interval": "Aktualisierungstakt",
+          "elevation": "Höhe über NN",
+          "solar_sensor": "Sonneneinstrahlung",
+          "solar_calibration": "Abgleich des Klarhimmelmodells"
+        },
+        "data_description": {
+          "trend_hours": "Zeitraum, über den die Drucktendenz berechnet wird. Das Verfahren ist klassisch auf 3 Stunden ausgelegt.",
+          "update_interval": "Wie oft neu gerechnet wird. Häufiger als alle paar Minuten bringt nichts, da sich der Luftdruck langsam ändert.",
+          "elevation": "Wird nur gebraucht, wenn der absolute Druck verwendet wird. Vorbelegt mit der Höhe aus deiner Home-Assistant-Konfiguration.",
+          "solar_sensor": "Kann hier nachgetragen werden, wenn die Integration vor Version 0.3.0 eingerichtet wurde.",
+          "solar_calibration": "Zeigt die Karte auch an wolkenlosen Tagen dauerhaft Bewölkung, liest dein Sensor zu niedrig: Wert unter 1 setzen. Meldet sie umgekehrt bei bedecktem Himmel „sonnig“, Wert über 1 setzen."
+        }
+      }
+    }
+  },
+  "entity": {
+    "weather": {
+      "local_forecast": {
+        "state_attributes": {
+          "zambretti_code": {
+            "name": "Zambretti-Code"
+          },
+          "zambretti_text": {
+            "name": "Prognosetext"
+          },
+          "pressure_trend": {
+            "name": "Drucktendenz"
+          },
+          "sea_level_pressure": {
+            "name": "Druck auf Meereshöhe"
+          },
+          "sample_count": {
+            "name": "Messwerte im Trendfenster"
+          },
+          "clear_sky_index": {
+            "name": "Klarheitsindex"
+          },
+          "condition_source": {
+            "name": "Quelle des Zustands"
+          }
+        }
+      }
+    }
+  }
+}

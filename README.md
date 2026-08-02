@@ -222,10 +222,28 @@ nur Niederschlag voraus.
 
 ## Dashboard-Karte
 
-Die Karte wird beim Start automatisch als Frontend-Ressource bereitgestellt —
-du musst sie **nicht** von Hand unter Einstellungen → Dashboards → Ressourcen
+Die Karte trägt sich beim Start automatisch als Lovelace-Ressource ein — du
+musst sie **nicht** von Hand unter Einstellungen → Dashboards → Ressourcen
 eintragen. Nach dem Neustart erscheint sie in der Kartenauswahl als
 „Lokale Wetterprognose".
+
+Das funktioniert im **Storage-Modus** (dem Standard). Läuft dein Lovelace im
+**YAML-Modus**, kann Home Assistant keine Ressourcen automatisch eintragen —
+dann die Datei einmalig selbst registrieren:
+
+```yaml
+# configuration.yaml
+lovelace:
+  mode: yaml
+  resources:
+    - url: /local_forecast/local-forecast-card.js
+      type: module
+```
+
+Falls die Karte nach einem Update im Ladekreis hängt, liegt das fast immer am
+Browser-Zwischenspeicher: hart neu laden (Strg+Shift+R), in der Companion-App
+den Frontend-Cache zurücksetzen. Die Ressourcen-URL trägt die Versionsnummer,
+damit das nach Updates von selbst greift.
 
 ```yaml
 type: custom:local-forecast-card
@@ -391,6 +409,10 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Reykjavík, Singapur) unter 0,011°. Der Vergleich steckt als Testfall im
   Repository und wird übersprungen, wenn `astral` nicht installiert ist.
 - 37 Testfälle gegen die Lovelace-Karte, alle grün (`node tests/test_card.js`).
+- 7 Testfälle gegen die Ressourcen-Registrierung (`frontend.py`), alle grün:
+  Pfad wird registriert, im Storage-Modus entsteht eine Ressource, im
+  YAML-Modus nicht, eine veraltete wird aktualisiert statt verdoppelt, fremde
+  Ressourcen bleiben unangetastet.
   Geprüft werden unter anderem das deutsche Zahlenformat, die Benennung der
   Tendenzrichtung an ihren Schwellwerten, das Lesen der Kurzform von
   Verlaufsdaten (`s`/`lu`/`lc`), das Überspringen von `unavailable`-Werten,
@@ -416,6 +438,11 @@ Ehrlich, damit klar ist, was getestet wurde und was nicht:
   Browser. Geprüft ist die erzeugte Auszeichnung, nicht ihr Aussehen.
 
 ## Versionshistorie
+
+**0.4.2** — Die Karte trägt sich jetzt als echte Lovelace-Ressource ein statt
+nur als Frontend-Modul. Das behebt den Ladekreis, der auftrat, weil die frühere
+Registrierung erst nach einem harten Neuladen der Seite wirksam wurde. Bei
+Versionswechsel wird der Eintrag aktualisiert statt verdoppelt.
 
 **0.4.1** — Behebt einen Ladekreis in der Kartenauswahl: `setConfig` warf bei
 leerer Entität eine Ausnahme und hängte die Vorschau auf. Das Symbol-Element
